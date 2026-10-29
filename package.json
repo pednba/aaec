@@ -1,0 +1,13 @@
+{
+  "name": "aace",
+  "private": true,
+  "description": "Assistente de Agendamento de Consultas e Exames",
+  "license": "MIT",
+  "scripts": {
+    "test": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0",
+    "xlsx": "0.18.5"
+  }
+}
