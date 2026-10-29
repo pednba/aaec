@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="description" content="Transforma o PDF do guia médico do seu plano de saúde numa planilha com links de WhatsApp e rotas para agendar consultas e exames.">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AACE – Assistente de Agendamento de Consultas e Exames</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --green-dark: #1A4D2E;
+    --green-mid: #2E7D52;
+    --green-light: #EAF4EC;
+    --green-accent: #4CAF72;
+    --yellow: #FFF9C4;
+    --yellow-border: #F5D85A;
+    --gray-100: #F7F8F7;
+    --gray-200: #E8EBE8;
+    --gray-400: #8A9A8A;
+    --gray-700: #3A3A3A;
+    --red: #C0392B;
+    --font: 'Segoe UI', system-ui, sans-serif;
+    --mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--gray-100); color: var(--gray-700); min-height: 100vh; }
+
+  header {
+    background: var(--green-dark); color: white;
+    padding: 16px 28px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 3px solid var(--green-accent);
+  }
+  header .brand .logo { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  header .brand .sub  { font-size: 11px; color: #a8d5b5; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  header .version     { font-size: 10px; color: #6aad85; font-family: var(--mono); }
+
+  /* API KEY BANNER */
+  .apikey-bar {
+    background: #0d1117; border-bottom: 2px solid var(--green-accent);
+    padding: 10px 28px; display: flex; align-items: center; gap: 12px;
+  }
+  .apikey-bar label { font-size: 11px; font-weight: 700; color: #8b949e; text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+  .apikey-bar input {
+    flex: 1; max-width: 420px; padding: 6px 10px;
+    background: #161b22; border: 1px solid #30363d; border-radius: 5px;
+    font-family: var(--mono); font-size: 12px; color: #7ee787;
+    letter-spacing: 0.5px;
+  }
+  .apikey-bar input:focus { outline: none; border-color: var(--green-accent); }
+  .apikey-bar .apikey-status { font-size: 11px; color: #8b949e; }
+  .apikey-bar .apikey-status.ok  { color: var(--green-accent); }
+  .apikey-bar .apikey-status.err { color: #ff7b72; }
+  .apikey-bar .btn-clear {
+    padding: 4px 10px; font-size: 11px; font-weight: 600;
+    background: transparent; border: 1px solid #30363d; border-radius: 4px;
+    color: #8b949e; cursor: pointer; transition: all 0.15s;
+  }
+  .apikey-bar .btn-clear:hover { border-color: #ff7b72; color: #ff7b72; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 18px 60px; }
+
+  .step-indicator {
+    display: flex; margin-bottom: 24px;
+    border-radius: 8px; overflow: hidden; border: 1px solid var(--gray-200);
+  }
+  .step-pill {
+    flex: 1; padding: 9px 4px; text-align: center;
+    font-size: 10px; font-weight: 700; background: white; color: var(--gray-400);
+    border-right: 1px solid var(--gray-200); text-transform: uppercase; letter-spacing: 0.3px;
+    transition: all 0.2s;
+  }
+  .step-pill:last-child { border-right: none; }
+  .step-pill.active { background: var(--green-dark); color: white; }
+  .step-pill.done   { background: var(--green-light); color: var(--green-mid); }
+
+  .card {
+    background: white; border-radius: 10px;
+    border: 1px solid var(--gray-200); padding: 24px; margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 14px; font-weight: 700; color: var(--green-dark);
+    margin-bottom: 16px; padding-bottom: 10px;
+    border-bottom: 2px solid var(--green-light);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .step-num {
+    background: var(--green-dark); color: white;
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0;
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--gray-200); border-radius: 8px;
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: all 0.2s; background: var(--gray-100);
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--green-accent); background: var(--green-light); }
+  .upload-zone .icon  { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone .label { font-size: 13px; color: var(--gray-400); }
+  .upload-zone .label strong { color: var(--green-mid); }
+  #pdf-input { display: none; }
+
+  .file-chip {
+    background: var(--green-light); border: 1px solid var(--green-accent);
+    border-radius: 6px; padding: 9px 13px; font-size: 12px;
+    color: var(--green-dark); font-weight: 600;
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  label { font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: 0.4px; display: block; margin-bottom: 4px; }
+  input[type=text], textarea {
+    width: 100%; padding: 8px 11px; border: 1px solid var(--gray-200);
+    border-radius: 6px; font-size: 13px; font-family: var(--font);
+    color: var(--gray-700); background: white; transition: border-color 0.15s;
+  }
+  input[type=text]:focus, textarea:focus {
+    outline: none; border-color: var(--green-accent);
+    box-shadow: 0 0 0 3px rgba(76,175,114,0.12);
+  }
+  textarea { resize: vertical; min-height: 90px; line-height: 1.5; font-size: 12px; }
+
+  .profile-tabs { display: flex; gap: 7px; margin-bottom: 14px; flex-wrap: wrap; }
+  .profile-tab {
+    padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--gray-200);
+    font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+    background: white; color: var(--gray-400);
+  }
+  .profile-tab:hover  { border-color: var(--green-accent); color: var(--green-mid); }
+  .profile-tab.active { background: var(--green-dark); border-color: var(--green-dark); color: white; }
+  .profile-tab.new-tab { border-style: dashed; }
+  .cfg-link { background: none; border: none; color: var(--green-mid); font-size: 12px; cursor: pointer; padding: 0; margin-left: auto; text-decoration: underline; }
+  .cfg-panel { margin: 0 0 14px; padding: 12px; border: 1px dashed var(--gray-200, #ddd); border-radius: 8px; }
+  .cfg-panel textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
+  .cfg-hint { font-size: 12px; color: var(--gray-400, #888); margin: 6px 0; }
+  .cfg-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+
+  .btn {
+    padding: 10px 22px; border-radius: 7px; border: none;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary  { background: var(--green-dark); color: white; }
+  .btn-primary:hover  { background: var(--green-mid); }
+  .btn-primary:disabled { background: var(--gray-200); color: var(--gray-400); cursor: not-allowed; }
+  .btn-secondary { background: white; color: var(--green-dark); border: 1.5px solid var(--green-dark); }
+  .btn-secondary:hover { background: var(--green-light); }
+  .btn-sm { padding: 7px 14px; font-size: 12px; }
+  .btn-row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+
+  .status-box {
+    border-radius: 7px; padding: 13px 16px; font-size: 13px;
+    margin-bottom: 12px; display: flex; align-items: flex-start; gap: 10px;
+  }
+  .status-ok   { background: var(--green-light); border: 1px solid #b8dfc4; color: var(--green-dark); }
+  .status-warn { background: var(--yellow); border: 1px solid var(--yellow-border); color: #7a6000; }
+  .status-err  { background: #fdf0ef; border: 1px solid #f5c6c2; color: var(--red); }
+  .status-info { background: #EEF4FF; border: 1px solid #C7D9FF; color: #2A4DA0; }
+
+  .spinner {
+    display: inline-block; width: 15px; height: 15px;
+    border: 2px solid #b8dfc4; border-top-color: var(--green-mid);
+    border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; margin-top: 1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .log-box {
+    background: #0d1117; border-radius: 8px; padding: 14px 16px;
+    font-family: var(--mono); font-size: 11px; color: #7ee787;
+    max-height: 180px; overflow-y: auto; margin-top: 12px; line-height: 1.7;
+  }
+  .log-ts   { color: #8b949e; }
+  .log-err  { color: #ff7b72; }
+  .log-warn { color: #e3b341; }
+
+  .preview-wrap { overflow-x: auto; margin-top: 10px; border-radius: 8px; border: 1px solid var(--gray-200); max-height: 340px; overflow-y: auto; }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .preview-table th { background: var(--green-dark); color: white; padding: 7px 9px; text-align: left; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+  .preview-table td { padding: 6px 9px; border-bottom: 1px solid var(--gray-200); vertical-align: top; max-width: 180px; word-break: break-word; }
+  .preview-table tr:nth-child(even) td { background: var(--green-light); }
+  .preview-table tr:hover td { background: #d4edda; }
+
+  .count-badge { display: inline-block; background: var(--green-accent); color: white; border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 700; margin-left: 8px; }
+
+  .qa-block { margin-bottom: 12px; }
+  .qa-q { background: var(--green-light); border-left: 3px solid var(--green-accent); padding: 9px 13px; border-radius: 0 6px 6px 0; font-size: 13px; color: var(--green-dark); margin-bottom: 5px; font-weight: 600; }
+
+  .sep  { height: 1px; background: var(--gray-200); margin: 16px 0; }
+  .text-sm { font-size: 11px; color: var(--gray-400); }
+  .mt8  { margin-top: 8px; }
+  .mt12 { margin-top: 12px; }
+  .hidden { display: none !important; }
+
+  .drive-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--green-dark); color: white; padding: 11px 20px;
+    border-radius: 7px; text-decoration: none; font-weight: 700;
+    font-size: 13px; margin-top: 10px; transition: background 0.15s;
+  }
+  .drive-btn:hover { background: var(--green-mid); }
+
+  code { font-family: var(--mono); font-size: 11px; background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+
+  .tipo-badge {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    padding: 2px 8px; border-radius: 10px; margin-left: 8px; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .tipo-consulta { background: #dbeafe; color: #1e40af; }
+  .tipo-exame    { background: #fce7f3; color: #9d174d; }
+
+  .apikey-bar select {
+    padding: 6px 8px; background: #161b22; border: 1px solid #30363d; border-radius: 5px;
+    font-size: 12px; color: #c9d1d9;
+  }
+  .apikey-bar a { font-size: 11px; color: #8b949e; }
+  header a { color: inherit; }
+  .privacy { font-size: 12px; line-height: 1.5; }
+  .casa-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 12px; }
+  .casa-row .casa-txt { flex: 1; word-break: break-word; }
+  .casa-add { display: grid; grid-template-columns: 1fr 2fr auto; gap: 8px; margin-top: 8px; }
+  .link-btn { background: none; border: none; color: var(--red); font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
+
+  @media (max-width: 640px) {
+    header, .apikey-bar { padding-left: 16px; padding-right: 16px; }
+    .apikey-bar { flex-wrap: wrap; }
+    .apikey-bar input { max-width: none; min-width: 0; flex-basis: 100%; order: 1; }
+    .apikey-bar label:first-child { flex-basis: 100%; }
+    .apikey-bar > *:not(label:first-child):not(input) { order: 2; }
+    .container { padding-left: 12px; padding-right: 12px; }
+    .card { padding: 16px; }
+    .form-grid, .casa-add { grid-template-columns: 1fr; }
+    .step-pill { font-size: 9px; padding: 8px 2px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">AACE</div>
+    <div class="sub">Assistente de Agendamento de Consultas e Exames</div>
+  </div>
+  <div class="version"><a href="https://github.com/pednba/aaec" target="_blank" rel="noopener">v2.0 · código aberto</a></div>
+</header>
+
+<!-- API KEY BAR -->
+<div class="apikey-bar">
+  <label>Anthropic API Key:</label>
+  <input type="password" id="apikey-input" placeholder="sk-ant-..." autocomplete="off" oninput="onApiKeyChange()">
+  <span class="apikey-status" id="apikey-status">Não configurada</span>
+  <button class="btn-clear" onclick="clearApiKey()">Limpar</button>
+  <label for="model-select">Modelo:</label>
+  <select id="model-select" onchange="onModelChange()"></select>
+  <a href="https://github.com/pednba/aaec#chave-da-api" target="_blank" rel="noopener">Como obter a chave?</a>
+</div>
+
+<div class="container">
+
+  <div class="step-indicator">
+    <div class="step-pill active" id="pill-1">1. PDF e Perfil</div>
+    <div class="step-pill" id="pill-2">2. Extração IA</div>
+    <div class="step-pill" id="pill-3">3. Mensagem WA</div>
+    <div class="step-pill" id="pill-4">4. Prévia</div>
+    <div class="step-pill" id="pill-5">5. Exportar</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div id="step-1">
+    <div class="status-box status-info privacy">
+      <div>🔒 Tudo roda no seu navegador. O PDF vai direto do seu computador para a API da Anthropic, usando a <strong>sua</strong> chave; não existe servidor do AACE no meio. Perfis, endereços e a chave ficam salvos só neste navegador. O guia do plano e a mensagem podem conter dados de saúde: use num computador de confiança.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="step-num">1</span> Arquivo PDF do Guia Médico</div>
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('pdf-input').click()">
+        <div class="icon">📄</div>
+        <div class="label">Arraste o PDF aqui ou <strong>clique para selecionar</strong></div>
+        <div class="label text-sm mt8">Qualquer guia médico em PDF (consultas ou exames)</div>
+      </div>
+      <input type="file" id="pdf-input" accept=".pdf">
+      <div id="file-chip" class="hidden"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;"><span class="step-num">2</span> Beneficiário
+        <button type="button" class="cfg-link" onclick="toggleConfig()">⚙ Endereços e backup</button>
+      </div>
+      <div id="cfg-panel" class="cfg-panel hidden">
+        <div class="cfg-hint"><strong>Endereços de partida</strong>: cada um vira uma coluna "Rota" na planilha, com o caminho de carro até cada prestador.</div>
+        <div id="casas-list"></div>
+        <div class="casa-add">
+          <input type="text" id="casa-rotulo" placeholder="Rótulo (ex: Casa)">
+          <input type="text" id="casa-endereco" placeholder="Endereço completo, com cidade e estado">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addCasa()">Adicionar</button>
+        </div>
+        <div class="sep"></div>
+        <div class="cfg-hint"><strong>Pasta para guardar as planilhas</strong> (opcional): link de uma pasta sua no Google Drive, OneDrive etc. Aparece como botão no fim.</div>
+        <input type="text" id="cfg-pasta" placeholder="https://drive.google.com/drive/folders/..." onchange="savePasta()">
+        <div class="sep"></div>
+        <div class="cfg-hint"><strong>Backup</strong>: tudo fica só neste navegador (localStorage). Para levar a outro computador, baixe o backup e importe lá.</div>
+        <textarea id="cfg-json" rows="6" spellcheck="false" placeholder='{"solicitante":"Seu nome","perfis":[{"rotulo":"Mãe","nome":"","relacao":"minha mãe","idade":"","plano":""}],"casas":[{"rotulo":"Casa","endereco":""}],"pasta":""}'></textarea>
+        <div class="cfg-btns">
+          <button type="button" class="btn btn-primary btn-sm" onclick="saveConfigFromText()">Importar JSON</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="downloadConfig()">Baixar backup</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="clearConfig()">Apagar tudo deste navegador</button>
+          <span id="cfg-status" class="cfg-hint"></span>
+        </div>
+      </div>
+      <div class="profile-tabs" id="profile-tabs"></div>
+      <div class="form-grid">
+        <div><label>Nome completo</label><input type="text" id="f-nome" value=""></div>
+        <div><label>Relação (para mensagem WA)</label><input type="text" id="f-relacao" value=""></div>
+        <div><label>Idade</label><input type="text" id="f-idade" value=""></div>
+        <div><label>Plano de saúde</label><input type="text" id="f-plano" value=""></div>
+        <div><label>Seu nome (quem envia a mensagem)</label><input type="text" id="f-solicitante" value="" onchange="saveSolicitante()"></div>
+        <div><label>Rótulo do perfil</label><input type="text" id="f-rotulo" value="" placeholder="ex: Mãe, Eu, Filho"></div>
+      </div>
+      <div class="cfg-btns">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="saveProfile()">Salvar perfil neste navegador</button>
+        <button type="button" class="link-btn" id="btn-del-profile" onclick="deleteProfile()">Excluir perfil</button>
+        <span id="profile-status" class="cfg-hint"></span>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-go2" onclick="goStep2()" disabled>Extrair prestadores com IA →</button>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div id="step-2" class="hidden">
+    <div class="card">
+      <div class="card-title"><span class="step-num">2</span> Extração dos prestadores</div>
+      <div id="s2-status"></div>
+      <div id="s2-log" class="log-box hidden"></div>
+    </div>
+    <div class="btn-row hidden" id="s2-btns">
+      <button class="btn btn-secondary" onclick="goStep1()">← Voltar</button>
+      <button class="btn btn-primary" onclick="goStep3()">Definir mensagem WA →</button>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div id="step-3" class="hidden">
+    <div class="card">
+      <div class="card-title">
+        <span class="step-num">3</span> Contexto para a mensagem de WhatsApp
+        <span class="tipo-badge" id="tipo-badge"></span>
+      </div>
+      <div id="wa-questions"></div>
+      <div class="sep"></div>
+      <div>
+        <label>Prévia da mensagem <span class="text-sm">(editável)</span></label>
+        <textarea id="wa-msg" rows="5"></textarea>
+        <div class="text-sm mt8">Esta mensagem será codificada em todos os links de WhatsApp da planilha.</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goStep2()">← Voltar</button>
+      <button class="btn btn-primary" onclick="goStep4()">Ver prévia →</button>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div id="step-4" class="hidden">
+    <div class="card">
+      <div class="card-title">
+        <span class="step-num">4</span> Prévia dos dados extraídos
+        <span class="count-badge" id="preview-count">0</span>
+      </div>
+      <div class="status-box status-warn">⚠️ Verifique os dados antes de exportar. A IA pode ter pequenas imprecisões de leitura do PDF.</div>
+      <div class="preview-wrap">
+        <table class="preview-table">
+          <thead><tr><th>#</th><th>Estabelecimento</th><th>Bairro</th><th>Cidade</th><th>Endereço</th><th>Médico(s)</th><th>Tel 1</th><th>Tel 2</th><th>Tel 3</th></tr></thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goStep3()">← Ajustar mensagem</button>
+      <button class="btn btn-primary" onclick="goStep5()">Gerar planilha →</button>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div id="step-5" class="hidden">
+    <div class="card">
+      <div class="card-title"><span class="step-num">5</span> Exportar planilha</div>
+      <div id="s5-status"></div>
+      <div id="s5-log" class="log-box hidden"></div>
+      <div id="s5-result" class="hidden"></div>
+    </div>
+    <div class="btn-row hidden" id="s5-btns">
+      <button class="btn btn-secondary" onclick="resetAll()">Processar novo PDF</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+// Nada pessoal fica no código: a página é pública. Cada navegador guarda a
+// própria configuração em localStorage (perfis, endereços, pasta, chave).
+const CFG_KEY   = 'aace_perfis';
+const LS_KEY    = 'aace_apikey';
+const MODEL_KEY = 'aace_model';
+const EMPTY_CFG = { solicitante: '', perfis: [], casas: [], pasta: '' };
+
+// Modelos oferecidos. "fallback" liga a nova tentativa automática do lado da
+// Anthropic quando o filtro de segurança recusa o pedido (não existe no Haiku).
+const MODELS = [
+  { id: 'claude-opus-5-5',   nome: 'Claude Opus 5.5 (mais preciso)',  fallback: true  },
+  { id: 'claude-sonnet-5-5', nome: 'Claude Sonnet 5.5 (equilibrado)', fallback: true  },
+  { id: 'claude-haiku-5-5',  nome: 'Claude Haiku 5.5 (mais barato)',  fallback: false }
+];
+
+let CFG = loadConfig();
+let selectedProfile = -1;
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let pdfBase64              = null;
+let pdfFileName            = '';
+let extracted              = [];
+let waMessage              = '';
+let tipoDetectado          = '';
+let especialidadeDetectada = '';
+
+// ─── STORAGE ─────────────────────────────────────────────────────────────────
+// localStorage pode falhar (janela anônima, site bloqueado): a página segue
+// funcionando, só não lembra nada.
+function lsGet(k)    { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function lsDel(k)    { try { localStorage.removeItem(k); } catch (e) {} }
+
+// ─── API KEY E MODELO ────────────────────────────────────────────────────────
+let apiKeyMem = '';
+function getApiKey() { return lsGet(LS_KEY) || apiKeyMem; }
+
+function onApiKeyChange() {
+  const val = document.getElementById('apikey-input').value.trim();
+  const statusEl = document.getElementById('apikey-status');
+  if (val.startsWith('sk-ant-') && val.length > 20) {
+    apiKeyMem = val;
+    statusEl.textContent = lsSet(LS_KEY, val) ? 'Salva neste navegador' : 'Em uso (não foi possível salvar)';
+    statusEl.className = 'apikey-status ok';
+  } else if (val.length > 0) {
+    apiKeyMem = '';
+    statusEl.textContent = 'Formato inválido';
+    statusEl.className = 'apikey-status err';
+  } else {
+    apiKeyMem = '';
+    lsDel(LS_KEY);
+    statusEl.textContent = 'Não configurada';
+    statusEl.className = 'apikey-status';
+  }
+  updateGoBtn();
+}
+
+function clearApiKey() {
+  lsDel(LS_KEY);
+  apiKeyMem = '';
+  document.getElementById('apikey-input').value = '';
+  document.getElementById('apikey-status').textContent = 'Não configurada';
+  document.getElementById('apikey-status').className = 'apikey-status';
+  updateGoBtn();
+}
+
+function getModel() {
+  const id = document.getElementById('model-select').value;
+  return MODELS.find(m => m.id === id) || MODELS[0];
+}
+
+function onModelChange() { lsSet(MODEL_KEY, getModel().id); }
+
+function updateGoBtn() {
+  const hasKey = getApiKey().length > 0;
+  const hasPdf = pdfBase64 !== null;
+  document.getElementById('btn-go2').disabled = !(hasKey && hasPdf);
+}
+
+function initTopBar() {
+  const sel = document.getElementById('model-select');
+  sel.innerHTML = MODELS.map(m => `<option value="${m.id}">${escapeHtml(m.nome)}</option>`).join('');
+  const savedModel = lsGet(MODEL_KEY);
+  if (MODELS.some(m => m.id === savedModel)) sel.value = savedModel;
+  const saved = getApiKey();
+  if (saved) {
+    document.getElementById('apikey-input').value = saved;
+    document.getElementById('apikey-status').textContent = 'Salva neste navegador';
+    document.getElementById('apikey-status').className = 'apikey-status ok';
+  }
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+// O que vem do PDF e da IA é texto de terceiros: sempre escapar antes de
+// colocar no HTML.
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function ts() {
+  return new Date().toLocaleTimeString('pt-BR', { hour12: false });
+}
+
+function log(elId, msg, type = '') {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.classList.remove('hidden');
+  const cls = type === 'err' ? 'log-err' : type === 'warn' ? 'log-warn' : '';
+  el.innerHTML += `<span class="log-ts">[${ts()}]</span> <span class="${cls}">${escapeHtml(msg)}</span>\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(elId, html) { document.getElementById(elId).innerHTML = html; }
+function showBtns(id)          { document.getElementById(id).classList.remove('hidden'); }
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'bom dia' : h < 18 ? 'boa tarde' : 'boa noite';
+}
+
+function datePrefix() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function slug(v, max) {
+  return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').substring(0, max);
+}
+
+// Telefone brasileiro → link wa.me. Números 0800/0300/4004 não têm WhatsApp.
+function waLink(tel) {
+  let digits = String(tel).replace(/\D/g, '');
+  if (!digits || /^0?(800|300|303|500|900)/.test(digits) || /^(400|300)\d{5}$/.test(digits)) return null;
+  digits = digits.replace(/^0+/, '');
+  if (digits.length === 10 || digits.length === 11) digits = '55' + digits;
+  if (digits.length < 12) return null;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(waMessage)}`;
+}
+
+function fullAddress(p) {
+  return [p.endereco, p.cidade, p.uf, 'Brasil'].filter(Boolean).join(', ');
+}
+
+function mapsSearch(p) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress(p))}`;
+}
+
+function mapsRoute(origin, p) {
+  return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(fullAddress(p))}&travelmode=driving`;
+}
+
+// Chamada à API da Anthropic direto do navegador, com streaming: guias longos
+// geram respostas grandes, e o streaming evita que a conexão expire no meio.
+async function callClaude(body) {
+  const key = getApiKey();
+  if (!key) throw new Error('Chave da API não configurada. Cole sua chave sk-ant-... na barra superior.');
+  const model = getModel();
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-api-key': key,
+    'anthropic-version': '2023-06-01',
+    'anthropic-dangerous-direct-browser-access': 'true'
+  };
+  const payload = { model: model.id, stream: true, ...body };
+  if (model.fallback) {
+    headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+    payload.fallbacks = 'default';
+  }
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST', headers, body: JSON.stringify(payload)
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    if (resp.status === 401) throw new Error('Chave da API recusada (401). Confira se copiou a chave inteira.');
+    throw new Error(`API ${resp.status}: ${err.substring(0, 300)}`);
+  }
+
+  let text = '', stopReason = null, buf = '';
+  const reader  = resp.body.getReader();
+  const decoder = new TextDecoder();
+  const handle = line => {
+    if (!line.startsWith('data:')) return;
+    const ev = JSON.parse(line.slice(5).trim());
+    if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') text += ev.delta.text;
+    else if (ev.type === 'message_delta' && ev.delta?.stop_reason) stopReason = ev.delta.stop_reason;
+    else if (ev.type === 'error') throw new Error(`API: ${ev.error?.message || 'erro no streaming'}`);
+  };
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    lines.forEach(handle);
+  }
+  if (buf) handle(buf);
+
+  if (stopReason === 'refusal') throw new Error('O modelo recusou o pedido. Tente de novo ou escolha outro modelo na barra superior.');
+  return { text, stopReason };
+}
+
+// ─── STEP CONTROL ────────────────────────────────────────────────────────────
+function showStep(n) {
+  [1,2,3,4,5].forEach(i => {
+    document.getElementById(`step-${i}`).classList.toggle('hidden', i !== n);
+    const p = document.getElementById(`pill-${i}`);
+    p.classList.remove('active', 'done');
+    if (i === n) p.classList.add('active');
+    else if (i < n) p.classList.add('done');
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function goStep1() { showStep(1); }
+function goStep2() { showStep(2); runExtraction(); }
+function goStep3() { showStep(3); buildWASection(); }
+
+function goStep4() {
+  waMessage = document.getElementById('wa-msg').value.trim();
+  if (!waMessage) { alert('A mensagem de WhatsApp não pode ficar vazia.'); return; }
+  showStep(4);
+  buildPreview();
+}
+
+function goStep5() { showStep(5); runExport(); }
+
+// ─── UPLOAD ──────────────────────────────────────────────────────────────────
+const MAX_PDF_MB = 30;
+const uploadZone = document.getElementById('upload-zone');
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') loadFile(f);
+});
+document.getElementById('pdf-input').addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file) {
+  const chip = document.getElementById('file-chip');
+  chip.classList.remove('hidden');
+  if (file.size > MAX_PDF_MB * 1024 * 1024) {
+    pdfBase64 = null;
+    chip.innerHTML = `<div class="status-box status-err">❌ ${escapeHtml(file.name)} tem ${(file.size/1024/1024).toFixed(1)} MB. O limite da API é ${MAX_PDF_MB} MB: divida o PDF em partes.</div>`;
+    updateGoBtn();
+    return;
+  }
+  pdfFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = e => {
+    pdfBase64 = e.target.result.split(',')[1];
+    chip.innerHTML = `<div class="file-chip">📄 ${escapeHtml(file.name)} &nbsp;·&nbsp; ${(file.size/1024).toFixed(0)} KB</div>`;
+    updateGoBtn();
+  };
+  reader.readAsDataURL(file);
+}
+
+// ─── PROFILES E CONFIG ───────────────────────────────────────────────────────
+function loadConfig() {
+  try {
+    const raw = lsGet(CFG_KEY);
+    return raw ? normalizeConfig(JSON.parse(raw)) : { ...EMPTY_CFG };
+  } catch (e) {
+    return { ...EMPTY_CFG };
+  }
+}
+
+function normalizeConfig(c) {
+  return {
+    solicitante: String(c?.solicitante || ''),
+    perfis: Array.isArray(c?.perfis) ? c.perfis.filter(p => p && typeof p === 'object') : [],
+    casas:  Array.isArray(c?.casas)  ? c.casas.filter(h => h && h.endereco) : [],
+    pasta:  String(c?.pasta || '')
+  };
+}
+
+function persistConfig() { return lsSet(CFG_KEY, JSON.stringify(CFG)); }
+
+function setCfgStatus(msg)     { document.getElementById('cfg-status').textContent = msg; }
+function setProfileStatus(msg) { document.getElementById('profile-status').textContent = msg; }
+
+function toggleConfig() {
+  const panel = document.getElementById('cfg-panel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    document.getElementById('cfg-json').value = '';
+    document.getElementById('cfg-pasta').value = CFG.pasta;
+    renderCasas();
+    setCfgStatus('');
+  }
+}
+
+function renderCasas() {
+  const box = document.getElementById('casas-list');
+  box.innerHTML = CFG.casas.length ? '' : '<div class="cfg-hint">Nenhum endereço cadastrado.</div>';
+  CFG.casas.forEach((h, i) => {
+    const row = document.createElement('div');
+    row.className = 'casa-row';
+    row.innerHTML = `<span class="casa-txt"><strong>${escapeHtml(h.rotulo || 'Casa')}</strong>: ${escapeHtml(h.endereco)}</span>`;
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'link-btn'; del.textContent = 'remover';
+    del.onclick = () => { CFG.casas.splice(i, 1); persistConfig(); renderCasas(); };
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+function addCasa() {
+  const rotulo   = document.getElementById('casa-rotulo').value.trim();
+  const endereco = document.getElementById('casa-endereco').value.trim();
+  if (!endereco) { setCfgStatus('Preencha o endereço.'); return; }
+  CFG.casas.push({ rotulo: rotulo || `Casa ${CFG.casas.length + 1}`, endereco });
+  persistConfig();
+  document.getElementById('casa-rotulo').value = '';
+  document.getElementById('casa-endereco').value = '';
+  renderCasas();
+  setCfgStatus('Endereço salvo.');
+}
+
+function savePasta() {
+  CFG.pasta = document.getElementById('cfg-pasta').value.trim();
+  persistConfig();
+  setCfgStatus(CFG.pasta ? 'Pasta salva.' : 'Pasta removida.');
+}
+
+function saveSolicitante() {
+  CFG.solicitante = document.getElementById('f-solicitante').value.trim();
+  persistConfig();
+}
+
+function saveConfigFromText() {
+  const txt = document.getElementById('cfg-json').value.trim();
+  try {
+    CFG = normalizeConfig(JSON.parse(txt));
+    persistConfig();
+    renderProfiles();
+    renderCasas();
+    document.getElementById('cfg-pasta').value = CFG.pasta;
+    setCfgStatus(`Importado: ${CFG.perfis.length} perfis, ${CFG.casas.length} endereços.`);
+  } catch (e) {
+    setCfgStatus('JSON inválido: ' + e.message);
+  }
+}
+
+function downloadConfig() {
+  const blob = new Blob([JSON.stringify(CFG, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'aace-perfis.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function clearConfig() {
+  if (!confirm('Apagar perfis, endereços e pasta deste navegador?')) return;
+  lsDel(CFG_KEY);
+  CFG = { ...EMPTY_CFG, perfis: [], casas: [] };
+  document.getElementById('cfg-json').value = '';
+  document.getElementById('cfg-pasta').value = '';
+  renderProfiles();
+  renderCasas();
+  setCfgStatus('Apagado.');
+}
+
+function renderProfiles(selectIdx) {
+  const box = document.getElementById('profile-tabs');
+  box.innerHTML = '';
+  CFG.perfis.forEach((p, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'profile-tab';
+    tab.textContent = p.rotulo || p.nome || `Perfil ${i + 1}`;
+    tab.onclick = () => selectProfile(i);
+    box.appendChild(tab);
+  });
+  const novo = document.createElement('div');
+  novo.className = 'profile-tab new-tab';
+  novo.textContent = '+ Novo';
+  novo.onclick = () => selectProfile(-1);
+  box.appendChild(novo);
+  document.getElementById('f-solicitante').value = CFG.solicitante;
+  selectProfile(selectIdx ?? (CFG.perfis.length ? 0 : -1));
+}
+
+function selectProfile(idx) {
+  selectedProfile = idx;
+  const tabs = document.querySelectorAll('.profile-tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  (idx >= 0 ? tabs[idx] : tabs[tabs.length - 1]).classList.add('active');
+  const p = CFG.perfis[idx] || {};
+  document.getElementById('f-nome').value    = p.nome    || '';
+  document.getElementById('f-relacao').value = p.relacao || '';
+  document.getElementById('f-idade').value   = p.idade   || '';
+  document.getElementById('f-plano').value   = p.plano   || '';
+  document.getElementById('f-rotulo').value  = p.rotulo  || '';
+  document.getElementById('btn-del-profile').classList.toggle('hidden', idx < 0);
+  setProfileStatus('');
+}
+
+function saveProfile() {
+  const p = {
+    rotulo:  document.getElementById('f-rotulo').value.trim(),
+    nome:    document.getElementById('f-nome').value.trim(),
+    relacao: document.getElementById('f-relacao').value.trim(),
+    idade:   document.getElementById('f-idade').value.trim(),
+    plano:   document.getElementById('f-plano').value.trim()
+  };
+  if (!p.nome && !p.rotulo) { setProfileStatus('Preencha ao menos o nome ou o rótulo.'); return; }
+  saveSolicitante();
+  let idx = selectedProfile;
+  if (idx >= 0) CFG.perfis[idx] = p;
+  else { CFG.perfis.push(p); idx = CFG.perfis.length - 1; }
+  const ok = persistConfig();
+  renderProfiles(idx);
+  setProfileStatus(ok ? 'Perfil salvo.' : 'Não foi possível salvar neste navegador.');
+}
+
+function deleteProfile() {
+  if (selectedProfile < 0) return;
+  if (!confirm('Excluir este perfil deste navegador?')) return;
+  CFG.perfis.splice(selectedProfile, 1);
+  persistConfig();
+  renderProfiles();
+  setProfileStatus('Perfil excluído.');
+}
+
+initTopBar();
+renderProfiles();
+
+// ─── STEP 2: EXTRACTION ──────────────────────────────────────────────────────
+// Lê o JSON mesmo que venha cercado de texto ou de cerca de código.
+function parseJsonLoose(raw) {
+  const clean = raw.replace(/```json|```/g, '').trim();
+  try { return JSON.parse(clean); } catch (e) {
+    const a = clean.indexOf('{'), b = clean.lastIndexOf('}');
+    if (a >= 0 && b > a) return JSON.parse(clean.slice(a, b + 1));
+    throw e;
+  }
+}
+
+async function runExtraction() {
+  const logId = 's2-log';
+  document.getElementById('s2-log').innerHTML = '';
+  document.getElementById('s2-log').classList.add('hidden');
+  document.getElementById('s2-btns').classList.add('hidden');
+  extracted = [];
+
+  setStatus('s2-status', `<div class="status-box status-info"><div class="spinner"></div> Enviando PDF para extração com IA... guias grandes podem levar alguns minutos.</div>`);
+  log(logId, `PDF carregado (${pdfFileName}), iniciando extração...`);
+
+  const system = `Você é um extrator de dados de guias médicos (rede credenciada de planos de saúde do Brasil) em PDF.
+Extraia TODOS os prestadores e retorne APENAS JSON válido, sem markdown, sem texto adicional.
+
+Formato:
+{"plano":"","tipo":"consulta ou exame","especialidade":"","prestadores":[{"estabelecimento":"","bairro":"","cidade":"","uf":"","endereco":"","medicos":"","tel1":"","tel2":"","tel3":""}]}
+
+Regras:
+- tipo: "consulta" se for guia de especialidade médica, "exame" se for guia de exames/procedimentos
+- especialidade: nome da especialidade ou do exame conforme consta no PDF
+- plano: nome do plano identificado no PDF
+- endereco: logradouro, número e complemento, sem bairro, cidade nem estado (ex: "R Araguaia, 13 - sala 201")
+- bairro: apenas o nome do bairro
+- cidade: nome do município; uf: sigla do estado com 2 letras. Se o PDF só informa a cidade no cabeçalho de uma seção, repita-a em cada prestador da seção
+- medicos: nomes separados por " / " se múltiplos; vazio se não houver corpo clínico listado
+- tel1/tel2/tel3: os três primeiros telefones no formato (DDD) número, ex: (11) 3333-4444 ou (21) 99999-8888; vazio se não houver
+- Um mesmo estabelecimento com múltiplos endereços = uma linha por endereço`;
+
+  try {
+    log(logId, `Chamando a API (${getModel().nome})...`);
+    const { text: raw, stopReason } = await callClaude({
+      max_tokens: 64000,
+      output_config: { effort: 'medium' },
+      system,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+          { type: 'text', text: 'Extraia todos os prestadores deste guia médico e retorne o JSON conforme instruído.' }
+        ]
+      }]
+    });
+
+    log(logId, 'Resposta recebida, processando JSON...');
+    if (!raw) throw new Error('Resposta da API veio vazia.');
+    if (stopReason === 'max_tokens') {
+      throw new Error('O guia é grande demais para uma leitura só e a resposta foi cortada. Divida o PDF em partes menores e processe cada uma.');
+    }
+
+    const parsed           = parseJsonLoose(raw);
+    extracted              = Array.isArray(parsed.prestadores) ? parsed.prestadores : [];
+    tipoDetectado          = parsed.tipo === 'exame' ? 'exame' : 'consulta';
+    especialidadeDetectada = String(parsed.especialidade || '');
+
+    if (parsed.plano && !document.getElementById('f-plano').value) {
+      document.getElementById('f-plano').value = parsed.plano;
+    }
+
+    log(logId, `Extração concluída: ${extracted.length} prestadores.`);
+    log(logId, `Tipo: ${tipoDetectado} · Especialidade: ${especialidadeDetectada}`);
+
+    if (!extracted.length) {
+      setStatus('s2-status', `<div class="status-box status-warn">⚠️ Nenhum prestador encontrado. O PDF é mesmo um guia médico? PDFs escaneados (imagem) também funcionam, mas com mais erros.</div>`);
+    } else {
+      setStatus('s2-status', `<div class="status-box status-ok">✅ ${extracted.length} prestadores identificados · <strong>${escapeHtml(tipoDetectado)}</strong> · ${escapeHtml(especialidadeDetectada)}</div>`);
+    }
+    showBtns('s2-btns');
+
+  } catch(err) {
+    log(logId, `ERRO: ${err.message}`, 'err');
+    setStatus('s2-status', `<div class="status-box status-err">❌ Falha na extração: ${escapeHtml(err.message)}</div>`);
+    showBtns('s2-btns');
+  }
+}
+
+// ─── STEP 3: WA MESSAGE ──────────────────────────────────────────────────────
+function buildWASection() {
+  const badge   = document.getElementById('tipo-badge');
+  const isExame = tipoDetectado === 'exame';
+  badge.textContent = isExame ? 'Exame' : 'Consulta';
+  badge.className   = `tipo-badge ${isExame ? 'tipo-exame' : 'tipo-consulta'}`;
+
+  const qs = isExame ? [
+    { id: 'qa-proc', label: 'Nome do exame ou procedimento',  placeholder: 'ex: endoscopia digestiva alta...' },
+    { id: 'qa-diag', label: 'Diagnóstico ou motivo do exame', placeholder: 'ex: suspeita de úlcera...' },
+    { id: 'qa-ctx',  label: 'Contexto adicional (opcional)',   placeholder: 'ex: encaminhamento do Dr. X...' }
+  ] : [
+    { id: 'qa-esp',  label: 'Especialidade médica buscada',       placeholder: 'ex: cardiologista...' },
+    { id: 'qa-diag', label: 'Diagnóstico ou motivo da consulta',  placeholder: 'ex: dor lombar persistente...' },
+    { id: 'qa-ctx',  label: 'Contexto adicional (opcional)',       placeholder: 'ex: apresentar exames...' }
+  ];
+
+  const area = document.getElementById('wa-questions');
+  area.innerHTML = qs.map(q => `
+    <div class="qa-block">
+      <div class="qa-q">${q.label}</div>
+      <input type="text" id="${q.id}" placeholder="${q.placeholder}"
+        value="${(q.id === 'qa-esp' || q.id === 'qa-proc') ? escapeHtml(especialidadeDetectada) : ''}">
+    </div>`).join('');
+  area.innerHTML += `<button class="btn btn-secondary btn-sm mt8" onclick="generateWAMessage()">Gerar mensagem com IA</button>`;
+
+  const nome    = document.getElementById('f-nome').value;
+  const relacao = document.getElementById('f-relacao').value;
+  const idade   = document.getElementById('f-idade').value;
+  const plano   = document.getElementById('f-plano').value;
+  const solic   = document.getElementById('f-solicitante').value.trim();
+  const g       = greeting();
+  const contexto = isExame ? `realizar o exame de ${especialidadeDetectada}` : `uma consulta de ${especialidadeDetectada}`;
+  const para    = [relacao, nome].filter(Boolean).join(' ');
+
+  document.getElementById('wa-msg').value =
+    `Olá, ${g}. ${solic ? `Me chamo ${solic} e gostaria` : 'Gostaria'} de agendar ${contexto}${para ? ' para ' + para : ''}${idade ? ', ' + idade : ''}${plano ? ', convênio ' + plano : ''}. Aguardo um retorno com as possibilidades de agenda. Obrigado(a).`;
+}
+
+async function generateWAMessage() {
+  const isExame = tipoDetectado === 'exame';
+  const nome    = document.getElementById('f-nome').value;
+  const relacao = document.getElementById('f-relacao').value;
+  const idade   = document.getElementById('f-idade').value;
+  const plano   = document.getElementById('f-plano').value;
+  const solic   = document.getElementById('f-solicitante').value.trim();
+  const proc    = document.getElementById(isExame ? 'qa-proc' : 'qa-esp')?.value || especialidadeDetectada;
+  const diag    = document.getElementById('qa-diag')?.value || '';
+  const ctx     = document.getElementById('qa-ctx')?.value  || '';
+  const g       = greeting();
+
+  const msgEl   = document.getElementById('wa-msg');
+  const before  = msgEl.value;
+  msgEl.value   = 'Gerando mensagem...';
+  msgEl.disabled = true;
+
+  try {
+    const { text } = await callClaude({
+      max_tokens: 2000,
+      output_config: { effort: 'low' },
+      messages: [{ role: 'user', content:
+`Crie uma mensagem de WhatsApp para agendar ${isExame ? 'um exame' : 'uma consulta'} médica. Direto e cordial. Máximo 3 frases. Sem emojis. Português brasileiro.
+
+Dados:
+- Solicitante: ${solic || 'não informado'} · Saudação: ${g}
+- Beneficiário: ${nome || 'não informado'} (${relacao || 'relação não informada'}${idade ? ', ' + idade : ''})
+- Plano: ${plano || 'não informado'}
+- ${isExame ? 'Exame' : 'Especialidade'}: ${proc}
+- Diagnóstico/motivo: ${diag || 'não informado'}
+- Contexto: ${ctx || 'nenhum'}
+
+Tom de referência (exemplo fictício): "Olá, bom dia. Me chamo Fulano e gostaria de agendar uma consulta de cardiologista para o meu tio, de 68 anos, convênio Exemplo Saúde. Ele precisa de avaliação para ajuste de medicação. Aguardo um retorno com as possibilidades de agenda. Obrigado."
+
+Retorne APENAS a mensagem, sem aspas, sem explicação.` }]
+    });
+    msgEl.value = text.trim() || before;
+  } catch(e) {
+    msgEl.value = before;
+    alert(`Não foi possível gerar a mensagem: ${e.message}`);
+  } finally {
+    msgEl.disabled = false;
+  }
+}
+
+// ─── STEP 4: PREVIEW ─────────────────────────────────────────────────────────
+function buildPreview() {
+  document.getElementById('preview-count').textContent = `${extracted.length} prestadores`;
+  const tbody = document.getElementById('preview-tbody');
+  tbody.innerHTML = '';
+  extracted.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    const cidade = [p.cidade, p.uf].filter(Boolean).join(' - ');
+    tr.innerHTML = [i + 1, p.estabelecimento, p.bairro, cidade, p.endereco, p.medicos, p.tel1, p.tel2, p.tel3]
+      .map(v => `<td>${escapeHtml(v)}</td>`).join('');
+    tbody.appendChild(tr);
+  });
+}
+
+// ─── STEP 5: EXPORT ──────────────────────────────────────────────────────────
+function telCell(tel) {
+  if (!tel) return '';
+  const link = waLink(tel);
+  return link ? { v: tel, l: { Target: link } } : tel;
+}
+
+function runExport() {
+  const logId = 's5-log';
+  document.getElementById('s5-log').innerHTML = '';
+  document.getElementById('s5-log').classList.add('hidden');
+  document.getElementById('s5-result').classList.add('hidden');
+  document.getElementById('s5-btns').classList.add('hidden');
+
+  setStatus('s5-status', `<div class="status-box status-info"><div class="spinner"></div> Gerando planilha xlsx...</div>`);
+  log(logId, 'Iniciando geração do xlsx...');
+
+  try {
+    const nome      = document.getElementById('f-nome').value;
+    const plano     = document.getElementById('f-plano').value;
+    const filename  = [datePrefix(), slug(nome.split(' ')[0], 20), slug(especialidadeDetectada, 20), slug(plano, 15)]
+      .filter(Boolean).join('_') + '.xlsx';
+
+    log(logId, `Arquivo: ${filename}`);
+    log(logId, `Prestadores: ${extracted.length}`);
+
+    const headers = [
+      'Estabelecimento','Bairro','Cidade','Endereço','Médico(s)',
+      ...CFG.casas.map(h => `Rota ${h.rotulo || 'casa'}`),
+      'Telefone 1','Telefone 2','Telefone 3','Status do Contato'
+    ];
+
+    const rows = [headers];
+    extracted.forEach(p => {
+      const addr = p.endereco || '';
+      rows.push([
+        p.estabelecimento || '',
+        p.bairro || '',
+        [p.cidade, p.uf].filter(Boolean).join(' - '),
+        addr ? { v: addr, l: { Target: mapsSearch(p) } } : '',
+        p.medicos || '',
+        ...CFG.casas.map(h => addr ? { v: `Rota ${h.rotulo || 'casa'}`, l: { Target: mapsRoute(h.endereco, p) } } : ''),
+        telCell(p.tel1),
+        telCell(p.tel2),
+        telCell(p.tel3),
+        ''
+      ]);
+    });
+
+    log(logId, 'Construindo workbook...');
+    const wb  = XLSX.utils.book_new();
+    const ws  = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [
+      {wch:36},{wch:20},{wch:20},{wch:44},{wch:44},
+      ...CFG.casas.map(() => ({wch:12})),
+      {wch:16},{wch:16},{wch:16},{wch:20}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Prestadores');
+
+    log(logId, 'Gerando arquivo e iniciando download...');
+    XLSX.writeFile(wb, filename);
+
+    log(logId, `Download disparado: ${filename}`);
+    log(logId, 'Concluído com sucesso.');
+
+    const pasta = /^https?:\/\//i.test(CFG.pasta) ? CFG.pasta : '';
+    setStatus('s5-status', '');
+    document.getElementById('s5-result').classList.remove('hidden');
+    document.getElementById('s5-result').innerHTML = `
+      <div class="status-box status-ok">✅ Planilha gerada com ${extracted.length} prestadores. Download iniciado.</div>
+      <div style="margin-top:12px;font-size:13px;"><strong>Arquivo:</strong> <code>${escapeHtml(filename)}</code></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--gray-400);">
+        Abra no Excel, Google Planilhas ou LibreOffice. Clique no telefone para abrir o WhatsApp com a mensagem pronta e use a coluna "Status do Contato" para acompanhar as respostas.
+      </div>
+      ${pasta ? `<a href="${escapeHtml(pasta)}" target="_blank" rel="noopener" class="drive-btn">📂 Abrir minha pasta de planilhas</a>` : ''}
+    `;
+    showBtns('s5-btns');
+
+  } catch(err) {
+    log(logId, `ERRO: ${err.message}`, 'err');
+    log(logId, err.stack || '', 'err');
+    setStatus('s5-status', `<div class="status-box status-err">❌ Erro ao gerar planilha: ${escapeHtml(err.message)}</div>`);
+    showBtns('s5-btns');
+  }
+}
+
+// ─── RESET ───────────────────────────────────────────────────────────────────
+function resetAll() {
+  pdfBase64 = null; extracted = []; waMessage = '';
+  pdfFileName = ''; tipoDetectado = ''; especialidadeDetectada = '';
+  document.getElementById('pdf-input').value = '';
+  document.getElementById('file-chip').classList.add('hidden');
+  updateGoBtn();
+  showStep(1);
+}
+
+showStep(1);
+</script>
+</body>
+</html>
