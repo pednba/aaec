@@ -16,9 +16,9 @@ Não precisa instalar nada nem criar conta no AACE. É uma página só, que roda
 4. **Gera a planilha `.xlsx`** com:
    - telefone clicável que abre o WhatsApp com a mensagem já escrita (números 0800 ficam sem link, porque não têm WhatsApp);
    - endereço clicável que abre o Google Maps;
-   - uma coluna de rota de carro para cada endereço de partida que você cadastrar (sua casa, a casa dos seus pais etc.);
+   - uma coluna de rota para cada endereço de partida cadastrado (sua casa, a casa dos seus pais, o trabalho etc.): o link abre o Google Maps com o caminho de carro saindo desse endereço até o consultório ou a clínica;
    - coluna "Status do Contato" para acompanhar quem respondeu.
-5. **Guarda perfis** (ex.: "Mãe", "Eu", "Filho") e endereços de partida no seu navegador, para não digitar tudo de novo. Dá para baixar um backup e importar em outro computador.
+5. **Guarda perfis** (ex.: "Mãe", "Eu", "Filho") e quantos endereços de partida você quiser no seu navegador, para não digitar tudo de novo. Os endereços valem para todos os perfis. Dá para baixar um backup e importar em outro computador.
 
 A planilha abre no Excel, no Google Planilhas e no LibreOffice.
 
