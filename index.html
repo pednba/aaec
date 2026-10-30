@@ -283,17 +283,9 @@
 
     <div class="card">
       <div class="card-title" style="display:flex;align-items:center;"><span class="step-num">2</span> Beneficiário
-        <button type="button" class="cfg-link" onclick="toggleConfig()">⚙ Endereços e backup</button>
+        <button type="button" class="cfg-link" onclick="toggleConfig()">⚙ Pasta e backup</button>
       </div>
       <div id="cfg-panel" class="cfg-panel hidden">
-        <div class="cfg-hint"><strong>Endereços de partida</strong>: cada um vira uma coluna "Rota" na planilha, com o caminho de carro até cada prestador.</div>
-        <div id="casas-list"></div>
-        <div class="casa-add">
-          <input type="text" id="casa-rotulo" placeholder="Rótulo (ex: Casa)">
-          <input type="text" id="casa-endereco" placeholder="Endereço completo, com cidade e estado">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addCasa()">Adicionar</button>
-        </div>
-        <div class="sep"></div>
         <div class="cfg-hint"><strong>Pasta para guardar as planilhas</strong> (opcional): link de uma pasta sua no Google Drive, OneDrive etc. Aparece como botão no fim.</div>
         <input type="text" id="cfg-pasta" placeholder="https://drive.google.com/drive/folders/..." onchange="savePasta()">
         <div class="sep"></div>
@@ -309,7 +301,7 @@
       <div class="profile-tabs" id="profile-tabs"></div>
       <div class="form-grid">
         <div><label>Nome completo</label><input type="text" id="f-nome" value=""></div>
-        <div><label>Relação (para mensagem WA)</label><input type="text" id="f-relacao" value=""></div>
+        <div><label>Relação de parentesco</label><input type="text" id="f-relacao" value="" placeholder="ex: minha mãe, meu filho, eu mesmo"></div>
         <div><label>Idade</label><input type="text" id="f-idade" value=""></div>
         <div><label>Plano de saúde</label><input type="text" id="f-plano" value=""></div>
         <div><label>Seu nome (quem envia a mensagem)</label><input type="text" id="f-solicitante" value="" onchange="saveSolicitante()"></div>
@@ -320,6 +312,18 @@
         <button type="button" class="link-btn" id="btn-del-profile" onclick="deleteProfile()">Excluir perfil</button>
         <span id="profile-status" class="cfg-hint"></span>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="step-num">3</span> Endereços de partida (rotas)</div>
+      <div class="cfg-hint">Cadastre quantos endereços quiser (sua casa, a casa dos seus pais, o trabalho). Eles valem para todos os perfis. Cada um vira uma coluna "Rota" na planilha, com o link do Google Maps saindo desse endereço até cada consultório ou clínica.</div>
+      <div id="casas-list"></div>
+      <div class="casa-add">
+        <input type="text" id="casa-rotulo" placeholder="Rótulo (ex: Casa)">
+        <input type="text" id="casa-endereco" placeholder="Endereço completo, com cidade e estado" onkeydown="if (event.key === 'Enter') addCasa()">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="addCasa()">Adicionar endereço</button>
+      </div>
+      <div id="casa-status" class="cfg-hint"></div>
     </div>
 
     <div class="btn-row">
@@ -683,6 +687,7 @@ function persistConfig() { return lsSet(CFG_KEY, JSON.stringify(CFG)); }
 
 function setCfgStatus(msg)     { document.getElementById('cfg-status').textContent = msg; }
 function setProfileStatus(msg) { document.getElementById('profile-status').textContent = msg; }
+function setCasaStatus(msg)    { document.getElementById('casa-status').textContent = msg; }
 
 function toggleConfig() {
   const panel = document.getElementById('cfg-panel');
@@ -690,21 +695,20 @@ function toggleConfig() {
   if (!panel.classList.contains('hidden')) {
     document.getElementById('cfg-json').value = '';
     document.getElementById('cfg-pasta').value = CFG.pasta;
-    renderCasas();
     setCfgStatus('');
   }
 }
 
 function renderCasas() {
   const box = document.getElementById('casas-list');
-  box.innerHTML = CFG.casas.length ? '' : '<div class="cfg-hint">Nenhum endereço cadastrado.</div>';
+  box.innerHTML = CFG.casas.length ? '' : '<div class="cfg-hint">Nenhum endereço cadastrado: a planilha sai sem colunas de rota.</div>';
   CFG.casas.forEach((h, i) => {
     const row = document.createElement('div');
     row.className = 'casa-row';
     row.innerHTML = `<span class="casa-txt"><strong>${escapeHtml(h.rotulo || 'Casa')}</strong>: ${escapeHtml(h.endereco)}</span>`;
     const del = document.createElement('button');
     del.type = 'button'; del.className = 'link-btn'; del.textContent = 'remover';
-    del.onclick = () => { CFG.casas.splice(i, 1); persistConfig(); renderCasas(); };
+    del.onclick = () => { CFG.casas.splice(i, 1); persistConfig(); renderCasas(); setCasaStatus('Endereço removido.'); };
     row.appendChild(del);
     box.appendChild(row);
   });
@@ -713,13 +717,13 @@ function renderCasas() {
 function addCasa() {
   const rotulo   = document.getElementById('casa-rotulo').value.trim();
   const endereco = document.getElementById('casa-endereco').value.trim();
-  if (!endereco) { setCfgStatus('Preencha o endereço.'); return; }
+  if (!endereco) { setCasaStatus('Preencha o endereço.'); return; }
   CFG.casas.push({ rotulo: rotulo || `Casa ${CFG.casas.length + 1}`, endereco });
-  persistConfig();
+  const persistOk = persistConfig();
   document.getElementById('casa-rotulo').value = '';
   document.getElementById('casa-endereco').value = '';
   renderCasas();
-  setCfgStatus('Endereço salvo.');
+  setCasaStatus(persistOk ? 'Endereço salvo neste navegador.' : 'Endereço em uso, mas não foi possível salvar neste navegador.');
 }
 
 function savePasta() {
@@ -830,6 +834,7 @@ function deleteProfile() {
 
 initTopBar();
 renderProfiles();
+renderCasas();
 
 // ─── STEP 2: EXTRACTION ──────────────────────────────────────────────────────
 // Lê o JSON mesmo que venha cercado de texto ou de cerca de código.

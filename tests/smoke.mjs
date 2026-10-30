@@ -58,16 +58,20 @@ await page.goto(pageUrl);
 await page.fill('#apikey-input', 'sk-ant-teste-0000000000000000');
 await page.dispatchEvent('#apikey-input', 'input');
 
-// perfil e endereço de partida salvos pela interface
+// perfil e endereços de partida salvos pela interface
 await page.fill('#f-rotulo', 'Mãe');
 await page.fill('#f-nome', 'Maria Exemplo');
 await page.fill('#f-relacao', 'minha mãe');
 await page.fill('#f-solicitante', 'Fulano');
 await page.click('text=Salvar perfil neste navegador');
-await page.click('text=⚙ Endereços e backup');
+// endereços ficam num card sempre visível, sem abrir painel nenhum
 await page.fill('#casa-rotulo', 'Casa');
 await page.fill('#casa-endereco', 'Av. Brasil, 1, Campinas, SP');
-await page.click('text=Adicionar');
+await page.click('text=Adicionar endereço');
+await page.fill('#casa-rotulo', 'Trabalho');
+await page.fill('#casa-endereco', 'Rua B, 2, Campinas, SP');
+await page.press('#casa-endereco', 'Enter');
+assert.equal(await page.locator('#casas-list .casa-row').count(), 2);
 
 const pdf = Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF');
 await page.setInputFiles('#pdf-input', { name: 'guia.pdf', mimeType: 'application/pdf', buffer: pdf });
@@ -100,19 +104,23 @@ const sheet = await page.evaluate(b => {
   const wb = XLSX.read(new Uint8Array(b), { type: 'array' });
   const ws = wb.Sheets.Prestadores;
   return { rows: XLSX.utils.sheet_to_json(ws, { header: 1 }), links: Object.fromEntries(
-    Object.entries(ws).filter(([k, v]) => v && v.l).map(([k, v]) => [k, v.l.Target])) };
+    // o leitor do SheetJS devolve o alvo ainda escapado como no XML (&amp;)
+    Object.entries(ws).filter(([k, v]) => v && v.l).map(([k, v]) => [k, v.l.Target.replace(/&amp;/g, '&')])) };
 }, bytes);
-assert.deepEqual(sheet.rows[0], ['Estabelecimento','Bairro','Cidade','Endereço','Médico(s)','Rota Casa','Telefone 1','Telefone 2','Telefone 3','Status do Contato']);
+assert.deepEqual(sheet.rows[0], ['Estabelecimento','Bairro','Cidade','Endereço','Médico(s)','Rota Casa','Rota Trabalho','Telefone 1','Telefone 2','Telefone 3','Status do Contato']);
 assert.equal(sheet.rows[1][2], 'Campinas - SP');
 assert.match(sheet.links.D2, /query=Rua%20A%2C%2010%2C%20Campinas%2C%20SP%2C%20Brasil/);
-assert.match(sheet.links.F2, /origin=Av\.%20Brasil/);
-assert.match(sheet.links.G2, /^https:\/\/wa\.me\/551933334444\?text=Ol%C3%A1/);
-assert.equal(sheet.links.H2, undefined, '0800 não vira link de WhatsApp');
+// rota: origem = endereço cadastrado, destino = endereço do prestador
+assert.match(sheet.links.F2, /origin=Av\.%20Brasil%2C%201%2C%20Campinas%2C%20SP&destination=Rua%20A%2C%2010%2C%20Campinas%2C%20SP%2C%20Brasil/);
+assert.match(sheet.links.G2, /origin=Rua%20B%2C%202%2C%20Campinas%2C%20SP&destination=Rua%20A%2C%2010/);
+assert.match(sheet.links.H2, /^https:\/\/wa\.me\/551933334444\?text=Ol%C3%A1/);
+assert.equal(sheet.links.I2, undefined, '0800 não vira link de WhatsApp');
 
 // configuração persiste após recarregar
 await page.reload();
 assert.equal(await page.inputValue('#f-nome'), 'Maria Exemplo');
 assert.equal(await page.inputValue('#f-solicitante'), 'Fulano');
+assert.equal(await page.locator('#casas-list .casa-row').count(), 2, 'endereços sobrevivem ao recarregar');
 
 assert.deepEqual(errors, [], 'sem erros de JavaScript');
 await browser.close();
